@@ -12,15 +12,15 @@
 BME280_I2C bme(0x76);  //i2C PA_SDA 32,PA_SCL 33
 TinyGPSPlus gps;
 //unsigned long lastMillisUpdate = 0;  // Letzte Aktualisierung des Balkens
-unsigned long lastGPSTimeUpdate = 0; // Letzte Aktualisierung der Uhrzeit
+unsigned long lastGPSTimeUpdate = 0;  // Letzte Aktualisierung der Uhrzeit
 //const int millisUpdateInterval = 20;  // Aktualisierung alle 20 ms (flüssiger)
-const int gpsUpdateInterval = 100;    // GPS-Anzeige nur alle 100 ms aktualisieren
+const int gpsUpdateInterval = 100;      // GPS-Anzeige nur alle 100 ms aktualisieren
 const float CO_THRESHOLD = 30.0;        // CO: gefährlich ab 30 ppm
 const float NH3_THRESHOLD = 25.0;       // NH3: gefährlich ab 25 ppm
 const float NO2_THRESHOLD = 10.0;       // NO2: gefährlich ab 10 ppm
 const float EMF_THRESHOLD = 50.0;       // EMF: gefährlich ab 20
 const float RADIATION_THRESHOLD = 5.0;  // Strahlung: gefährlich ab 5.0 µSv/h
-HardwareSerial MySerial(1);  // Verwende den zweiten Hardware-Serial-Port
+HardwareSerial MySerial(1);             // Verwende den zweiten Hardware-Serial-Port
 
 Adafruit_ADS1115 ads;
 double homeLat = 0.0;
@@ -276,6 +276,10 @@ void printDateTime(TinyGPSDate &d, TinyGPSTime &t);
 void displayMillisecondProgress();
 void printStr(const char *str, int len);
 
+String savedCity = "N/A";
+void updateNearestCity(float latitude, float longitude) {
+  findNearestCity(latitude, longitude, savedCity, nearestCountry);
+}
 
 void setup() {
   Serial.begin(115200);
@@ -283,9 +287,7 @@ void setup() {
   pinMode(geigerPin, INPUT);                                              // Setze PIN 26 als Eingang
   attachInterrupt(digitalPinToInterrupt(geigerPin), countPulse, RISING);  // Rufe countPulse() bei steigender Flanke auf
   M5.Lcd.fillScreen(BLACK);
-MySerial.begin(38400, SERIAL_8N1, 13, 14);  // RX = 13, TX = 14, Baudrate auf 38400 setzen
-
-
+  MySerial.begin(38400, SERIAL_8N1, 13, 14);  // RX = 13, TX = 14, Baudrate auf 38400 setzen
 
   Wire.begin(32, 33);
 
@@ -312,6 +314,22 @@ MySerial.begin(38400, SERIAL_8N1, 13, 14);  // RX = 13, TX = 14, Baudrate auf 38
   if (!SD.begin(TFCARD_CS_PIN, SPI, 40000000UL)) {
     Serial.println("SD-Karte konnte nicht initialisiert werden! Neustart...");
     ESP.restart();
+  }
+
+  // Koordinaten aus Datei lesen
+  File myFile = SD.open("/home_coordinates.txt");
+  if (myFile) {
+    String coordinates = myFile.readStringUntil('\n');  // Lese gespeicherte Werte
+    myFile.close();
+
+    int commaIndex = coordinates.indexOf(',');
+    if (commaIndex > 0) {
+      homeLat = coordinates.substring(0, commaIndex).toFloat();
+      homeLon = coordinates.substring(commaIndex + 1).toFloat();
+      updateNearestCity(homeLat, homeLon);
+    }
+  } else {
+    Serial.println("Keine gespeicherten Koordinaten gefunden.");
   }
 
   bme.setTempCal(-1);
@@ -348,24 +366,19 @@ MySerial.begin(38400, SERIAL_8N1, 13, 14);  // RX = 13, TX = 14, Baudrate auf 38
       M5.Lcd.drawPngFile(SD, "/GARPAX.png", 250, 0);
       M5.Lcd.setFreeFont(&CONTF___12pt7b);
       M5.Lcd.setTextColor(DARKCYAN, BLACK);
-      //M5.Lcd.setTextSize(1);
       M5.Lcd.setCursor(10, 40);
       M5.Lcd.print("MULITISENS-GARPAX");
       M5.Lcd.setTextColor(CYAN, BLACK);
       M5.Lcd.setCursor(100, 80);
       M5.Lcd.print("SAVED COORDINATES");
       M5.Lcd.setFreeFont(&SFChromeFendersCondensed16pt7b);
-      //M5.Lcd.setFreeFont(&CONTF___12pt7b);
       M5.Lcd.setCursor(133, 164);
       M5.Lcd.setTextColor(YELLOW, BLACK);
       M5.Lcd.print(nearestCity);
-      //M5.Lcd.setFreeFont(&CONTF___12pt7b);
       M5.Lcd.setCursor(160, 130);
       M5.Lcd.setTextColor(ORANGE, BLACK);
       M5.Lcd.print(nearestCountry);
       M5.Lcd.setFreeFont(&CONTF___12pt7b);
-      //M5.Lcd.setTextColor(CYAN,BLACK);
-      //M5.Lcd.setTextColor(ORANGE, BLACK);
       M5.Lcd.setCursor(126, 205);
       M5.Lcd.print("LATT: N ");
       M5.Lcd.setTextFont(1);
@@ -394,7 +407,7 @@ MySerial.begin(38400, SERIAL_8N1, 13, 14);  // RX = 13, TX = 14, Baudrate auf 38
   }
 
   //GRAPHIC
-  
+
   M5.Lcd.fillScreen(BLACK);
   M5.Lcd.drawRoundRect(0, 0, 320, 240, 8, CYAN);
   M5.Lcd.drawRoundRect(4, 24, 310, 104, 6, CYAN);
@@ -402,21 +415,19 @@ MySerial.begin(38400, SERIAL_8N1, 13, 14);  // RX = 13, TX = 14, Baudrate auf 38
   M5.Lcd.drawRoundRect(8, 28, 90, 96, 4, BLUE);
   M5.Lcd.drawRoundRect(222, 28, 88, 96, 4, BLUE);
   M5.Lcd.drawRoundRect(8, 136, 90, 96, 4, BLUE);
-  
+
   M5.Lcd.setTextFont(1);
   M5.Lcd.setTextSize(1);
-  M5.Lcd.setTextColor(CYAN, BLACK);
-  M5.Lcd.setCursor(130, 233);
-  M5.Lcd.print("> HOME POS <");
   M5.Lcd.setCursor(11, 233);
   M5.Lcd.setTextColor(CYAN, BLACK);
   M5.Lcd.print("> ");
   M5.Lcd.setTextColor(YELLOW, BLACK);
-  M5.Lcd.print(nearestCity);
-   M5.Lcd.setTextColor(CYAN, BLACK);
-  M5.Lcd.print(" <");
-  M5.Lcd.setCursor(230, 233);
+  M5.Lcd.print(savedCity);  // Hier wird die gespeicherte Position angezeigt
   M5.Lcd.setTextColor(CYAN, BLACK);
+  M5.Lcd.print(" <");
+  //M5.Lcd.setCursor(130, 233);
+  M5.Lcd.print("> HOME POS <");
+  M5.Lcd.setCursor(230, 233);
   M5.Lcd.print("> SVALBARD <");
 }
 // Funktion zur Berechnung eines Farbverlaufs von Rot (niedrig) nach Grün (hoch)
@@ -536,70 +547,65 @@ void displayValues(float doseRate, float averageDose) {
   M5.Lcd.printf("%.2f uSv/h", averageDose);
 }
 int calculateCET(TinyGPSDate &date, TinyGPSTime &time) {
-    int month = date.month();
-    int day = date.day();
+  int month = date.month();
+  int day = date.day();
 
-    // Wochentag berechnen (0 = Sonntag, 1 = Montag, ... nach Zeller's Kongruenz)
-    int k = day;
-    int m = (month < 3) ? month + 12 : month;  // Januar und Februar auf 13 und 14 verschieben
-    int d = date.year() % 100;                 // Letzte zwei Stellen des Jahres
-    int c = date.year() / 100;                 // Hunderter des Jahres
-    int weekday = (k + (13 * (m + 1)) / 5 + d + (d / 4) + (c / 4) - (2 * c)) % 7;
-    weekday = (weekday + 7) % 7;  // Korrektur für negative Werte
+  // Wochentag berechnen (0 = Sonntag, 1 = Montag, ... nach Zeller's Kongruenz)
+  int k = day;
+  int m = (month < 3) ? month + 12 : month;  // Januar und Februar auf 13 und 14 verschieben
+  int d = date.year() % 100;                 // Letzte zwei Stellen des Jahres
+  int c = date.year() / 100;                 // Hunderter des Jahres
+  int weekday = (k + (13 * (m + 1)) / 5 + d + (d / 4) + (c / 4) - (2 * c)) % 7;
+  weekday = (weekday + 7) % 7;  // Korrektur für negative Werte
 
-    // 🔹 Sommerzeit: Letzter Sonntag im März bis letzter Sonntag im Oktober
-    if (month > 3 && month < 10) {
-        return 2;  // Sommerzeit (UTC+2)
-    } 
-    else if (month == 3) {  // Letzter Sonntag im März
-        int lastSunday = 31 - weekday;
-        return (day >= lastSunday) ? 2 : 1;  // Ab letztem Sonntag Sommerzeit
-    } 
-    else if (month == 10) {  // Letzter Sonntag im Oktober
-        int lastSunday = 31 - weekday;
-        return (day < lastSunday) ? 2 : 1;  // Nach letztem Sonntag Winterzeit
-    } 
-    else {
-        return 1;  // Winterzeit (UTC+1)
-    }
+  // Sommerzeit: Letzter Sonntag im März bis letzter Sonntag im Oktober
+  if (month > 3 && month < 10) {
+    return 2;               // Sommerzeit (UTC+2)
+  } else if (month == 3) {  // Letzter Sonntag im März
+    int lastSunday = 31 - weekday;
+    return (day >= lastSunday) ? 2 : 1;  // Ab letztem Sonntag Sommerzeit
+  } else if (month == 10) {              // Letzter Sonntag im Oktober
+    int lastSunday = 31 - weekday;
+    return (day < lastSunday) ? 2 : 1;  // Nach letztem Sonntag Winterzeit
+  } else {
+    return 1;  // Winterzeit (UTC+1)
+  }
 }
 
 unsigned long lastUpdateTime = 0;  // Letzte Aktualisierung der Anzeige
-int lastSecond = -1;  // Um Sekundenänderungen zu verfolgen
+int lastSecond = -1;               // Um Sekundenänderungen zu verfolgen
 
 void printDateTime(TinyGPSDate &d, TinyGPSTime &t) {
-    unsigned long currentMillis = millis();
+  unsigned long currentMillis = millis();
 
-    if (currentMillis - lastGPSTimeUpdate >= gpsUpdateInterval) {
-        lastGPSTimeUpdate = currentMillis;
+  if (currentMillis - lastGPSTimeUpdate >= gpsUpdateInterval) {
+    lastGPSTimeUpdate = currentMillis;
 
-        if (!d.isValid() || !t.isValid()) {
-            M5.Lcd.setTextSize(2);
-            M5.Lcd.setTextColor(YELLOW, BLACK);
-            M5.Lcd.setCursor(6, 6);
-            M5.Lcd.print(F(">> NO GPS SIGNAL << "));
-        } 
-        else {
-            char sz[32];
-            sprintf(sz, "%02d.%02d.%02d ", d.year(), d.month(), d.day());
-            M5.Lcd.setTextColor(CYAN, BLACK);
-            M5.Lcd.setCursor(6, 6);
-            M5.Lcd.setTextSize(2);
-            M5.Lcd.print(sz);
+    if (!d.isValid() || !t.isValid()) {
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.setTextColor(YELLOW, BLACK);
+      M5.Lcd.setCursor(6, 6);
+      M5.Lcd.print(F(">> NO GPS SIGNAL << "));
+    } else {
+      char sz[32];
+      sprintf(sz, "%02d.%02d.%02d ", d.year(), d.month(), d.day());
+      M5.Lcd.setTextColor(CYAN, BLACK);
+      M5.Lcd.setCursor(6, 6);
+      M5.Lcd.setTextSize(2);
+      M5.Lcd.print(sz);
 
-            // 🔹 UTC-Zeit vom GPS empfangen und in CET/MESZ umrechnen
-            int cetOffset = calculateCET(d, t);
-            int hourCET = t.hour() + cetOffset;
-            if (hourCET >= 24) hourCET -= 24;  // Zeit korrekt anpassen
+      // UTC-Zeit vom GPS empfangen und in CET/MESZ umrechnen
+      int cetOffset = calculateCET(d, t);
+      int hourCET = t.hour() + cetOffset;
+      if (hourCET >= 24) hourCET -= 24;  // Zeit korrekt anpassen
 
-            // 🔹 Zeit mit CET anzeigen
-            unsigned long ms = currentMillis % 1000;  
-            sprintf(sz, "%02d:%02d:%02d", hourCET, t.minute(), t.second());
-            M5.Lcd.print(sz);
-        }
+      // Zeit mit CET anzeigen
+      unsigned long ms = currentMillis % 1000;
+      sprintf(sz, "%02d:%02d:%02d", hourCET, t.minute(), t.second());
+      M5.Lcd.print(sz);
     }
+  }
 }
-
 
 // Funktion zur Ausgabe eines Strings mit fester Länge
 void printStr(const char *str, int len) {
@@ -608,20 +614,21 @@ void printStr(const char *str, int len) {
     Serial.print(i < slen ? str[i] : ' ');  // Falls der String kürzer als len ist, Leerzeichen hinzufügen
   }
 }
+
 void loop() {
- M5.update();                              // Touch-Events aktualisieren
+  M5.update();                              // Touch-Events aktualisieren
   M5.Lcd.fillRect(198, 25, 23, 23, BLACK);  // Lösche alten Wert
-unsigned long loopStart = millis();  // Startzeit für gleichmäßige Updates
-//unsigned long loopTime = millis() - loopStart;
+  unsigned long loopStart = millis();       // Startzeit für gleichmäßige Updates
+                                            //unsigned long loopTime = millis() - loopStart;
   //  if (loopTime < 20) {
   //      delay(20 - loopTime);  // Gleichmäßige Schleifenzeit
- //   }
-// GPS-Daten sofort einlesen, sobald sie ankommen
+  //   }
+  // GPS-Daten sofort einlesen, sobald sie ankommen
   while (MySerial.available()) {
     gps.encode(MySerial.read());
   }
 
- printDateTime(gps.date, gps.time);  // Zeigt Echtzeit mit Millisekunden an
+  printDateTime(gps.date, gps.time);  // Zeigt Echtzeit mit Millisekunden an
 
   if (drawBitmapFlag) {
     drawPNGGeigerSignal();   // Zeichne das Bitmap
@@ -678,16 +685,15 @@ unsigned long loopStart = millis();  // Startzeit für gleichmäßige Updates
 
   //GPS INI
   printInt(gps.satellites.value(), gps.satellites.isValid(), 5);
-	printFloat(gps.hdop.hdop(), gps.hdop.isValid(), 6, 1);
-	printFloat(gps.location.lat(), gps.location.isValid(), 11, 6);
-	printFloat(gps.location.lng(), gps.location.isValid(), 12, 6);
-	printInt(gps.location.age(), gps.location.isValid(), 5);
-	printDateTime(gps.date, gps.time);
-	printFloat(gps.altitude.meters(), gps.altitude.isValid(), 7, 2);
-	printFloat(gps.course.deg(), gps.course.isValid(), 7, 2);
-	printFloat(gps.speed.kmph(), gps.speed.isValid(), 6, 2);
-	printStr(gps.course.isValid() ? TinyGPSPlus::cardinal(gps.course.deg()) : "*** ", 6);
-
+  printFloat(gps.hdop.hdop(), gps.hdop.isValid(), 6, 1);
+  printFloat(gps.location.lat(), gps.location.isValid(), 11, 6);
+  printFloat(gps.location.lng(), gps.location.isValid(), 12, 6);
+  printInt(gps.location.age(), gps.location.isValid(), 5);
+  printDateTime(gps.date, gps.time);
+  printFloat(gps.altitude.meters(), gps.altitude.isValid(), 7, 2);
+  printFloat(gps.course.deg(), gps.course.isValid(), 7, 2);
+  printFloat(gps.speed.kmph(), gps.speed.isValid(), 6, 2);
+  printStr(gps.course.isValid() ? TinyGPSPlus::cardinal(gps.course.deg()) : "*** ", 6);
 
   //SATELLITE TRACKER
   if (ss.available() > 0) {
@@ -711,13 +717,6 @@ unsigned long loopStart = millis();  // Startzeit für gleichmäßige Updates
           sats[no - 1].snr = atoi(snr[i].value());
           sats[no - 1].active = true;
         }
-//M5.Lcd.setTextSize(1);
-        //M5.Lcd.setCursor(104, 30);
-        //M5.Lcd.setTextColor(CYAN, BLACK);
-        //M5.Lcd.print("SATS");
-        //M5.Lcd.setCursor(104, 40);
-        //M5.Lcd.print(no);
-        //M5.Lcd.print(" ");
       }
 
       int totalMessages = atoi(totalGPGSVMessages.value());
@@ -749,6 +748,7 @@ unsigned long loopStart = millis();  // Startzeit für gleichmäßige Updates
   }
   //TOUCH BUTTONS
   if (M5.BtnA.wasPressed()) {
+    M5.Lcd.fillRoundRect(16, 233, 280, 9, 4, BLACK);
     M5.Lcd.fillRoundRect(100, 136, 212, 96, 4, BLACK);
     homeLat = gps.location.lat();
     homeLon = gps.location.lng();
@@ -756,7 +756,7 @@ unsigned long loopStart = millis();  // Startzeit für gleichmäßige Updates
     M5.Lcd.setTextColor(WHITE, BLACK);
     M5.Lcd.setCursor(108, 137);
     M5.Lcd.print("POSITION SAVED");
-M5.Lcd.setTextColor(CYAN, BLACK);
+    M5.Lcd.setTextColor(CYAN, BLACK);
     M5.Lcd.setCursor(108, 157);
     M5.Lcd.print("LATT: N");
     M5.Lcd.setTextSize(1);
@@ -770,7 +770,7 @@ M5.Lcd.setTextColor(CYAN, BLACK);
     M5.Lcd.setTextSize(2);
     M5.Lcd.print(gps.location.lng(), 6);
     delay(2000);
-
+    M5.Lcd.setTextSize(1);
     if (gps.location.isValid()) {
       File myFile = SD.open("/home_coordinates.txt", FILE_WRITE);
       if (myFile) {
@@ -778,15 +778,24 @@ M5.Lcd.setTextColor(CYAN, BLACK);
         myFile.print(",");
         myFile.println(gps.location.lng(), 6);
         myFile.close();
-        homeLat = gps.location.lat();
-        homeLon = gps.location.lng();
+        if (gps.location.isValid()) {
+          homeLat = gps.location.lat();
+          homeLon = gps.location.lng();
+          updateNearestCity(homeLat, homeLon);
+          displaySavedLocation();  // Aktualisiert Anzeige
+        }
       } else {
         Serial.println("ERROR WRITE FILE");
       }
     }
+    M5.Lcd.print("> HOME POS <");
+    M5.Lcd.setCursor(230, 233);
+    M5.Lcd.print("> SVALBARD <");
     M5.Lcd.fillRoundRect(100, 136, 212, 96, 4, BLACK);
   }
+
   if (M5.BtnB.wasPressed()) {
+    M5.Lcd.fillRoundRect(16, 233, 280, 9, 4, BLACK);
     M5.Lcd.fillRoundRect(100, 136, 212, 96, 4, BLACK);
     M5.Lcd.setTextSize(2);
     M5.Lcd.setTextColor(WHITE, BLACK);
@@ -807,7 +816,7 @@ M5.Lcd.setTextColor(CYAN, BLACK);
     M5.Lcd.setTextSize(2);
     M5.Lcd.print(" 8.289310");
     delay(2000);
-    //M5.Lcd.fillRoundRect(100, 136, 212, 96, 4, BLACK);
+    M5.Lcd.setTextSize(1);
     File myFile = SD.open("/home_coordinates.txt", FILE_WRITE);
     if (myFile) {
       myFile.print(51.861120, 6);
@@ -816,20 +825,25 @@ M5.Lcd.setTextColor(CYAN, BLACK);
       myFile.close();
       homeLat = 51.861120;
       homeLon = 8.289310;
+      updateNearestCity(homeLat, homeLon);
+      displaySavedLocation();  // Anzeige aktualisieren
     } else {
       Serial.println("ERROR WRITE FILE");
     }
+    M5.Lcd.print("> HOME POS <");
+    M5.Lcd.setCursor(230, 233);
+    M5.Lcd.print("> SVALBARD <");
     M5.Lcd.fillRoundRect(100, 136, 212, 96, 4, BLACK);
   }
 
-  
   if (M5.BtnC.wasPressed()) {
+    M5.Lcd.fillRoundRect(16, 233, 280, 9, 4, BLACK);
     M5.Lcd.fillRoundRect(100, 136, 212, 96, 4, BLACK);
     M5.Lcd.setTextSize(2);
     M5.Lcd.setTextColor(WHITE, BLACK);
     M5.Lcd.setCursor(108, 137);
     M5.Lcd.print("SVALBARD GSV");
-     M5.Lcd.setTextColor(CYAN, BLACK);
+    M5.Lcd.setTextColor(CYAN, BLACK);
     M5.Lcd.setCursor(108, 157);
     M5.Lcd.print("LATT: N");
     M5.Lcd.setTextSize(1);
@@ -843,7 +857,7 @@ M5.Lcd.setTextColor(CYAN, BLACK);
     M5.Lcd.setTextSize(2);
     M5.Lcd.print("15.491320");
     delay(2000);
-
+    M5.Lcd.setTextSize(1);
     File myFile = SD.open("/home_coordinates.txt", FILE_WRITE);
     if (myFile) {
       myFile.print(78.235680, 6);
@@ -852,27 +866,33 @@ M5.Lcd.setTextColor(CYAN, BLACK);
       myFile.close();
       homeLat = 78.235680;
       homeLon = 15.491320;
+      updateNearestCity(homeLat, homeLon);
+      displaySavedLocation();  // Anzeige aktualisieren
     } else {
       Serial.println("ERROR WRITE FILE");
     }
+    M5.Lcd.print("> HOME POS <");
+    M5.Lcd.setCursor(230, 233);
+    M5.Lcd.print("> SVALBARD <");
     M5.Lcd.fillRoundRect(100, 136, 212, 96, 4, BLACK);
   }
+
   unsigned long distanceToHome =
     (unsigned long)TinyGPSPlus::distanceBetween(gps.location.lat(),
-     gps.location.lng(), homeLat, homeLon);  // 1000;
+                                                gps.location.lng(), homeLat, homeLon);  // 1000;
   printInt(distanceToHome, gps.location.isValid(), 9);
-  
+
   double courseToHome = TinyGPSPlus::courseTo(
-      gps.location.lat(), gps.location.lng(), homeLat,homeLon);
+    gps.location.lat(), gps.location.lng(), homeLat, homeLon);
   printFloat(courseToHome, gps.location.isValid(), 7, 2);
-  
+
   const char *cardinalToHome = TinyGPSPlus::cardinal(courseToHome);
   printStr(gps.location.isValid() ? cardinalToHome : "*** ", 6);
-  
+
   printInt(gps.charsProcessed(), true, 6);
   printInt(gps.sentencesWithFix(), true, 10);
   printInt(gps.failedChecksum(), true, 9);
-  
+
   M5.Lcd.drawCircle(160, 76, 47, DARKGREEN);
   M5.Lcd.drawCircle(160, 76, 16, DARKGREEN);
   M5.Lcd.drawCircle(160, 76, 32, DARKGREEN);
@@ -883,10 +903,10 @@ M5.Lcd.setTextColor(CYAN, BLACK);
 
   //Zifferblatt mit Stundenmarkierungen**
   //for (int i = 0; i < 12; i++) {
- //   int y = (47 * cos(PI - (2 * PI) / 12 * i)) + 76;
+  //   int y = (47 * cos(PI - (2 * PI) / 12 * i)) + 76;
   //  int x = (47 * sin(PI - (2 * PI) / 12 * i)) + 160;
   //  int q = (43 * cos(PI - (2 * PI) / 12 * i)) + 76;
- //   int r = (43 * sin(PI - (2 * PI) / 12 * i)) + 160;
+  //   int r = (43 * sin(PI - (2 * PI) / 12 * i)) + 160;
   //  M5.Lcd.drawLine(r, q, x, y, GREEN);  // Zeichnet die 12 Stundenstriche
   //}
 
@@ -943,22 +963,21 @@ M5.Lcd.setTextColor(CYAN, BLACK);
           circleColor = 0xFFFF;
         }
 
-    
-// Erst die alten Kreise löschen, bevor neue gezeichnet werden
-if (oldX[i] != 0 && oldY[i] != 0) {
-    M5.Lcd.drawCircle(oldX[i], oldY[i], oldCircleSize1[i], BLACK);
-    M5.Lcd.fillCircle(oldX[i], oldY[i], oldCircleSize2[i], BLACK);
-}
+        // Erst die alten Kreise löschen, bevor neue gezeichnet werden
+        if (oldX[i] != 0 && oldY[i] != 0) {
+          M5.Lcd.drawCircle(oldX[i], oldY[i], oldCircleSize1[i], BLACK);
+          M5.Lcd.fillCircle(oldX[i], oldY[i], oldCircleSize2[i], BLACK);
+        }
 
-// Jetzt die neuen Kreise zeichnen
-M5.Lcd.drawCircle(x, y, 6, circleColor);
-M5.Lcd.fillCircle(x, y, 2, CYAN);  // Nutze "fillCircle" für eine bessere Darstellung
+        // Jetzt die neuen Kreise zeichnen
+        M5.Lcd.drawCircle(x, y, 6, circleColor);
+        M5.Lcd.fillCircle(x, y, 2, CYAN);  // Nutze "fillCircle" für eine bessere Darstellung
 
-// Speichere die neue Position und Größe
-oldX[i] = x;
-oldY[i] = y;
-oldCircleSize1[i] = 6;
-oldCircleSize2[i] = 2;
+        // Speichere die neue Position und Größe
+        oldX[i] = x;
+        oldY[i] = y;
+        oldCircleSize1[i] = 6;
+        oldCircleSize2[i] = 2;
 
         // Speichere die aktuelle Position und Größe
         oldX[i] = x;
@@ -1176,10 +1195,10 @@ oldCircleSize2[i] = 2;
   float voltage_NO2 = raw_NO2 * 0.125 / 1000.0;
   float voltage_EMF = raw_EMF * 0.125 / 1000.0;
   // Plausible ppm-Werte berechnen
-  float CO = voltage_CO * 15.0;  // 10.0 Beispiel-Skalierung
-  float NH3 = voltage_NH3 * 10.0; // 5.0 Beispiel-Skalierung
-  float NO2 = voltage_NO2 * 40.0;// 40.0 Beispiel-Skalierung
-  float EMF = voltage_EMF * 5.0; // 5.0 Beispiel-Skalierung
+  float CO = voltage_CO * 15.0;    // 10.0 Beispiel-Skalierung
+  float NH3 = voltage_NH3 * 10.0;  // 5.0 Beispiel-Skalierung
+  float NO2 = voltage_NO2 * 40.0;  // 40.0 Beispiel-Skalierung
+  float EMF = voltage_EMF * 5.0;   // 5.0 Beispiel-Skalierung
   if (CO > 99) {
     CO = 99;
   }
@@ -1209,9 +1228,8 @@ oldCircleSize2[i] = 2;
     M5.Lcd.print(" ppm");
   }
   if (NH3 > 99) {
-     NH3 = 99;
-  }
-  else if (NH3 > 15) {
+    NH3 = 99;
+  } else if (NH3 > 15) {
     M5.Lcd.drawRoundRect(12, 88, 82, 11, 2, RED);
     M5.Lcd.setCursor(14, 90);
     M5.Lcd.setTextColor(DARKCYAN, BLACK);
@@ -1238,8 +1256,7 @@ oldCircleSize2[i] = 2;
   }
   if (NO2 > 99) {
     NO2 = 99;
-  }
-  else if (NO2 > 5) {
+  } else if (NO2 > 5) {
     M5.Lcd.drawRoundRect(12, 99, 82, 11, 2, RED);
     M5.Lcd.setCursor(14, 101);
     M5.Lcd.setTextColor(DARKCYAN, BLACK);
@@ -1266,8 +1283,7 @@ oldCircleSize2[i] = 2;
   }
   if (EMF > 99) {
     EMF = 99;
-  }
-  else if (EMF > 40) {
+  } else if (EMF > 40) {
     M5.Lcd.drawRoundRect(12, 110, 82, 11, 2, RED);
     M5.Lcd.setCursor(14, 112);
     M5.Lcd.setTextColor(DARKCYAN, BLACK);
@@ -1340,81 +1356,77 @@ oldCircleSize2[i] = 2;
   }
 
   //GPS
-
- // LATTITUDE
-M5.Lcd.setTextSize(2);
-M5.Lcd.setTextColor(DARKCYAN, BLACK);
-M5.Lcd.setCursor(106, 136);
-M5.Lcd.print("LATT:");
-M5.Lcd.setTextColor(CYAN, BLACK);
-M5.Lcd.print(gps.location.lat() < 0 ? "S" : "N");
-M5.Lcd.setTextSize(1);
-M5.Lcd.print("\xF7");
-M5.Lcd.setTextSize(2);
-if (millis() > 5000 && gps.charsProcessed() < 10) {
+  // LATTITUDE
+  M5.Lcd.setTextSize(2);
+  M5.Lcd.setTextColor(DARKCYAN, BLACK);
+  M5.Lcd.setCursor(106, 136);
+  M5.Lcd.print("LATT:");
+  M5.Lcd.setTextColor(CYAN, BLACK);
+  M5.Lcd.print(gps.location.lat() < 0 ? "S" : "N");
+  M5.Lcd.setTextSize(1);
+  M5.Lcd.print("\xF7");
+  M5.Lcd.setTextSize(2);
+  if (millis() > 5000 && gps.charsProcessed() < 10) {
     M5.Lcd.print("---");
-} else {
+  } else {
     char latBuffer[10];
-    dtostrf(gps.location.lat(), 9, 6, latBuffer);
+    dtostrf(gps.location.lat(), 8, 6, latBuffer);
     M5.Lcd.print(latBuffer);
-}
-
+  }
   // LONGITUDE
-M5.Lcd.setTextColor(DARKCYAN, BLACK);
-M5.Lcd.setCursor(106, 156);
-M5.Lcd.print("LONG:");
-M5.Lcd.setTextColor(CYAN, BLACK);
-M5.Lcd.print(gps.location.lng() < 0 ? "W" : "E");
-M5.Lcd.setTextSize(1);
-M5.Lcd.print("\xF7");
-M5.Lcd.setTextSize(2);
-if (millis() > 5000 && gps.charsProcessed() < 10) {
+  M5.Lcd.setTextColor(DARKCYAN, BLACK);
+  M5.Lcd.setCursor(106, 156);
+  M5.Lcd.print("LONG:");
+  M5.Lcd.setTextColor(CYAN, BLACK);
+  M5.Lcd.print(gps.location.lng() < 0 ? "W" : "E");
+  M5.Lcd.setTextSize(1);
+  M5.Lcd.print("\xF7");
+  M5.Lcd.setTextSize(2);
+  if (millis() > 5000 && gps.charsProcessed() < 10) {
     M5.Lcd.print("---");
-} else {
+  } else {
     char lngBuffer[10];
-    dtostrf(gps.location.lng(), 9, 6, lngBuffer);
+    dtostrf(gps.location.lng(), 8, 6, lngBuffer);
     M5.Lcd.print(lngBuffer);
-}
-  
+  }
   // ALTITUDE
-M5.Lcd.setTextColor(DARKCYAN, BLACK);
-M5.Lcd.setCursor(106, 176);
-M5.Lcd.print("ALTI:");
-M5.Lcd.setTextColor(CYAN, BLACK);
+  M5.Lcd.setTextColor(DARKCYAN, BLACK);
+  M5.Lcd.setCursor(106, 176);
+  M5.Lcd.print("ALTI:");
+  M5.Lcd.setTextColor(CYAN, BLACK);
 
-if (millis() > 5000 && gps.charsProcessed() < 10) {
+  if (millis() > 5000 && gps.charsProcessed() < 10) {
     M5.Lcd.print("---");
-} else {
+  } else {
     M5.Lcd.print(gps.altitude.meters(), 2);
     M5.Lcd.print("m    ");
-}
-  
+  }
   // SPEED
-M5.Lcd.setTextColor(DARKCYAN, BLACK);
-M5.Lcd.setCursor(106, 196);
-M5.Lcd.print("SPED:");
-M5.Lcd.setTextColor(CYAN, BLACK);
-if (millis() > 5000 && gps.charsProcessed() < 10) {
+  M5.Lcd.setTextColor(DARKCYAN, BLACK);
+  M5.Lcd.setCursor(106, 196);
+  M5.Lcd.print("SPED:");
+  M5.Lcd.setTextColor(CYAN, BLACK);
+  if (millis() > 5000 && gps.charsProcessed() < 10) {
     M5.Lcd.print("---");
-} else {
+  } else {
     M5.Lcd.print(gps.speed.kmph(), 0);
     M5.Lcd.print("km/h    ");
-}
-  
+  }
+
   // HOME DISTANCE
-M5.Lcd.setTextColor(DARKCYAN, BLACK);
-M5.Lcd.setCursor(106, 215);
-M5.Lcd.print("HOME:");
-M5.Lcd.setTextColor(CYAN, BLACK);
-if ((gps.location.lat() == 0) && (gps.location.lng() == 0)) {
+  M5.Lcd.setTextColor(DARKCYAN, BLACK);
+  M5.Lcd.setCursor(106, 215);
+  M5.Lcd.print("HOME:");
+  M5.Lcd.setTextColor(CYAN, BLACK);
+  if ((gps.location.lat() == 0) && (gps.location.lng() == 0)) {
     M5.Lcd.print("---");
-} else if (TinyGPSPlus::distanceBetween(gps.location.lat(), gps.location.lng(), homeLat, homeLon) < 1000) {
+  } else if (TinyGPSPlus::distanceBetween(gps.location.lat(), gps.location.lng(), homeLat, homeLon) < 1000) {
     M5.Lcd.print(TinyGPSPlus::distanceBetween(gps.location.lat(), gps.location.lng(), homeLat, homeLon), 0);
     M5.Lcd.print("m ");
-} else {
+  } else {
     M5.Lcd.print(TinyGPSPlus::distanceBetween(gps.location.lat(), gps.location.lng(), homeLat, homeLon) / 1000, 2);
     M5.Lcd.print("km ");
-}
+  }
   M5.Lcd.fillRect(12, 222, 80, 9, BLACK);
   M5.Lcd.setTextSize(1);
   M5.Lcd.setTextColor(RED);
@@ -1467,39 +1479,47 @@ if ((gps.location.lat() == 0) && (gps.location.lng() == 0)) {
   float currentLat = gps.location.lat();
   float currentLon = gps.location.lng();
 
-static String lastCity = "";   // Speichert vorherige Stadt
-static String lastCountry = "";// Speichert vorheriges Land
+  static String lastCity = "";     // Speichert vorherige Stadt
+  static String lastCountry = "";  // Speichert vorheriges Land
 
-if (currentLat != 0.0 && currentLon != 0.0) {  // Nur wenn GPS gültige Werte liefert
+  if (currentLat != 0.0 && currentLon != 0.0) {  // Nur wenn GPS gültige Werte liefert
     String city, country;
     findNearestCity(currentLat, currentLon, city, country);  // Ruft Stadt + Land ab
 
     // Überprüfe, ob sich der Name geändert hat
     if (city != lastCity || country != lastCountry) {
-        // Lösche alten Textbereich nur, wenn sich Name geändert hat
-        M5.Lcd.fillRect(10, 127, 297, 8, BLACK);
-        M5.Lcd.setCursor(296, 127);
-        M5.Lcd.setTextColor(CYAN, BLACK);
-        M5.Lcd.print(" <");
-        M5.Lcd.setCursor(10, 127);
-        M5.Lcd.setTextSize(1);
-        M5.Lcd.print("> ");
-        M5.Lcd.setTextColor(YELLOW, BLACK);
-        M5.Lcd.print(city);  // Stadt anzeigen
-        M5.Lcd.setTextColor(CYAN, BLACK);
-        M5.Lcd.print(" - ");
-        M5.Lcd.setTextColor(ORANGE, BLACK);
-        M5.Lcd.print(country);  // Land anzeigen
-       
-        // Aktualisiere gespeicherte Werte
-        lastCity = city;
-        lastCountry = country;
-    }
-}
+      // Lösche alten Textbereich nur, wenn sich Name geändert hat
+      M5.Lcd.fillRect(10, 127, 297, 8, BLACK);
+      M5.Lcd.setCursor(296, 127);
+      M5.Lcd.setTextColor(CYAN, BLACK);
+      M5.Lcd.print(" <");
+      M5.Lcd.setCursor(10, 127);
+      M5.Lcd.setTextSize(1);
+      M5.Lcd.print("> ");
+      M5.Lcd.setTextColor(YELLOW, BLACK);
+      M5.Lcd.print(city);  // Stadt anzeigen
+      M5.Lcd.setTextColor(CYAN, BLACK);
+      M5.Lcd.print(" - ");
+      M5.Lcd.setTextColor(ORANGE, BLACK);
+      M5.Lcd.print(country);  // Land anzeigen
 
+      // Aktualisiere gespeicherte Werte
+      lastCity = city;
+      lastCountry = country;
+    }
+  }
 }
 //LOOP END
-
+void displaySavedLocation() {
+  M5.Lcd.fillRect(21, 233, 100, 10, BLACK);  // Löscht alten Text
+  M5.Lcd.setCursor(21, 233);
+  M5.Lcd.setTextColor(CYAN, BLACK);
+  //M5.Lcd.print("> ");
+  M5.Lcd.setTextColor(YELLOW, BLACK);
+  M5.Lcd.print(savedCity);  // Zeigt gespeicherte Stadt an
+  M5.Lcd.setTextColor(CYAN, BLACK);
+  M5.Lcd.print(" <");
+}
 void smartDelay(unsigned long ms) {
   unsigned long start = millis();
   do {
@@ -1537,4 +1557,3 @@ static void printInt(unsigned long val, bool valid, int len) {
     sz[len - 1] = ' ';
   Serial.print(sz);
 }
-
