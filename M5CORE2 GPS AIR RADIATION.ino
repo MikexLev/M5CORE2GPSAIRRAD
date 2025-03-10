@@ -28,7 +28,7 @@ const float NH3_THRESHOLD = 25.0;       // NH3: gefährlich ab 25 ppm
 const float NO2_THRESHOLD = 10.0;       // NO2: gefährlich ab 10 ppm
 const float EMF_THRESHOLD = 50.0;       // EMF: gefährlich ab 20
 const float RADIATION_THRESHOLD = 5.0;  // Strahlung: gefährlich ab 5.0 µSv/h
-const float alpha = 0.1; // Glättungsfaktor für GPS (zwischen 0 und 1)
+const float alpha = 0.2; // Glättungsfaktor für GPS (zwischen 0 und 1)
 HardwareSerial MySerial(1);             // Verwende den zweiten Hardware-Serial-Port
 
 Adafruit_ADS1115 ads;
@@ -1373,7 +1373,7 @@ for (int i = 1; i <= 42; i++) {
   }
 
   //GPS
-  // GPS
+
 // LATTITUDE
 M5.Lcd.setTextSize(2);
 M5.Lcd.setTextColor(DARKCYAN, BLACK);
@@ -1386,17 +1386,23 @@ M5.Lcd.print("\xF7");
 M5.Lcd.setTextSize(2);
 
 if (gps.location.isValid() && gps.location.lat() != 0.0) {
-    static double smoothLat = 0.0;  // Gespeicherte Werte für gleitenden Durchschnitt
-    const double alpha = 0.1;       // Gewichtung für Durchschnitt (0.1 = langsame Anpassung)
+    static double smoothLat = 0.0;
+    const float alpha = 0.2;  // Glättungsfaktor für bessere Anpassung
 
     smoothLat = (alpha * gps.location.lat()) + ((1 - alpha) * smoothLat);
 
-    char latBuffer[10];
-    dtostrf(smoothLat, 8, 6, latBuffer);  // Begrenze auf 6 Dezimalstellen
+    char latBuffer[12];  // Etwas größer für Sicherheit
+    snprintf(latBuffer, sizeof(latBuffer), "%.6f", smoothLat);  // Exakt 6 Dezimalstellen
+
+    M5.Lcd.fillRect(130, 136, 80, 16, BLACK);  // Löscht alte Zahl
+    M5.Lcd.setCursor(130, 136);
     M5.Lcd.print(latBuffer);
 } else {
-    M5.Lcd.print("---");  // Zeigt "---" an, wenn kein gültiges Signal vorhanden ist
+    M5.Lcd.fillRect(130, 136, 80, 16, BLACK);  // Löscht mögliche Artefakte
+    M5.Lcd.setCursor(130, 136);
+    M5.Lcd.print("---");  // Kein GPS-Signal
 }
+
 
 // LONGITUDE
 M5.Lcd.setTextColor(DARKCYAN, BLACK);
@@ -1409,53 +1415,23 @@ M5.Lcd.print("\xF7");
 M5.Lcd.setTextSize(2);
 
 if (gps.location.isValid() && gps.location.lng() != 0.0) {
-    static double smoothLon = 0.0;
+    static double smoothLon = 0.0;  // Gespeicherter Wert für geglättete Longitude
+    const float alpha = 0.2;        // Glättungsfaktor (gleiche Werte wie bei Latitude)
+
     smoothLon = (alpha * gps.location.lng()) + ((1 - alpha) * smoothLon);
 
-    char lngBuffer[10];
-    dtostrf(smoothLon, 9, 6, lngBuffer);
+    char lngBuffer[12];  // Etwas größerer Buffer für Sicherheit
+    snprintf(lngBuffer, sizeof(lngBuffer), "%.6f", smoothLon);  // Exakt 6 Nachkommastellen
+
+    M5.Lcd.fillRect(130, 156, 80, 16, BLACK);  // Löscht alten Wert
+    M5.Lcd.setCursor(130, 156);
     M5.Lcd.print(lngBuffer);
 } else {
-    M5.Lcd.print("---");
+    M5.Lcd.fillRect(130, 156, 80, 16, BLACK);  // Löscht mögliche Artefakte
+    M5.Lcd.setCursor(130, 156);
+    M5.Lcd.print("---");  // Kein GPS-Signal
 }
-
   
-  /*
-  // LATTITUDE
-  M5.Lcd.setTextSize(2);
-  M5.Lcd.setTextColor(DARKCYAN, BLACK);
-  M5.Lcd.setCursor(106, 136);
-  M5.Lcd.print("LATT:");
-  M5.Lcd.setTextColor(CYAN, BLACK);
-  
-  M5.Lcd.print(gps.location.lat() < 0 ? "S" : "N");
-  M5.Lcd.setTextSize(1);
-  M5.Lcd.print("\xF7");
-  M5.Lcd.setTextSize(2);
-  if (millis() > 5000 && gps.charsProcessed() < 10) {
-    M5.Lcd.print("---");
-  } else {
-    char latBuffer[10];
-    dtostrf(gps.location.lat(), 8, 6, latBuffer);
-    M5.Lcd.print(latBuffer);
-  }
-  // LONGITUDE
-  M5.Lcd.setTextColor(DARKCYAN, BLACK);
-  M5.Lcd.setCursor(106, 156);
-  M5.Lcd.print("LONG:");
-  M5.Lcd.setTextColor(CYAN, BLACK);
-  M5.Lcd.print(gps.location.lng() < 0 ? "W" : "E");
-  M5.Lcd.setTextSize(1);
-  M5.Lcd.print("\xF7");
-  M5.Lcd.setTextSize(2);
-  if (millis() > 5000 && gps.charsProcessed() < 10) {
-    M5.Lcd.print("---");
-  } else {
-    char lngBuffer[10];
-    dtostrf(gps.location.lng(), 9, 6, lngBuffer);
-    M5.Lcd.print(lngBuffer);
-  }
-  */
   // ALTITUDE
   M5.Lcd.setTextColor(DARKCYAN, BLACK);
   M5.Lcd.setCursor(106, 176);
