@@ -1429,7 +1429,7 @@ void loop() {
     if (city != lastCity || country != lastCountry) {
       M5.Lcd.fillRect(10, 127, 297, 8, BLACK);      
       M5.Lcd.drawFastHLine(21, 127, 286, CYAN);
-      M5.Lcd.drawFastHLine(21, 132, 286, CYAN);
+      M5.Lcd.drawFastHLine(21, 133, 286, CYAN);
       M5.Lcd.setTextColor(CYAN, BLACK);
       M5.Lcd.setCursor(10, 127);
       M5.Lcd.setTextSize(1);
